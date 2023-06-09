@@ -1,9 +1,12 @@
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -67,6 +70,12 @@ int main()
         printf("TCP socket created successfully.\n");
     }
 
+    int flags = fcntl(tcpSocket, F_GETFL, 0);
+    if(fcntl(tcpSocket, F_SETFL, flags | O_NONBLOCK) == -1) {
+        printf("ERROR: Could not set socket to non-blocking. This means that polling\n"
+               "will be different, but the servers should otherwise be functional.\n");
+    }
+
     struct sockaddr_in servaddr;
     bzero(&servaddr, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
@@ -106,7 +115,15 @@ int main()
     int len = sizeof(serverStorage);
     int tcpConnection = -1;
     int currentThreadId = -1;
+
+    fd_set socketReaderSet;
+    struct timeval timeout;
     do {
+        FD_ZERO(&socketReaderSet);
+        FD_SET(tcpSocket, &socketReaderSet);
+        timeout.tv_sec = 2;
+        timeout.tv_usec = 0;
+
         if(g_live_threads == MAX_CONNECTIONS) {
             printf("Maximum connections reached; no longer accepting connections.\n");
             char c = getchar();
@@ -118,21 +135,29 @@ int main()
             continue;
         }
 
-        tcpConnection = accept(tcpSocket, (struct sockaddr*)&serverStorage, &len);
-        if (tcpConnection < 0) {
-            printf("Failed to accept client connection.\n");
-            continue;
-        }
-        else {
-            printf("Client connected.\n");
+        int listenRetVal = select(tcpSocket + 1, &socketReaderSet, NULL, NULL, &timeout);
+        if(listenRetVal == -1 || listenRetVal == 0) {
+            continue; // timeout or unknown error
         }
 
-        if(pthread_create(&threads[++currentThreadId], NULL, process_package, &tcpConnection) != 0) {
-            printf("Failed to create thread [%d].\n", currentThreadId);
-            continue;
+        if(FD_ISSET(tcpSocket, &socketReaderSet)) {
+            tcpConnection = accept(tcpSocket, (struct sockaddr*)&serverStorage, &len);
+            if (tcpConnection < 0) {
+                printf("Failed to accept client connection.\n");
+                continue;
+            }
+            else {
+                printf("Client connected.\n");
+            }
+
+            if(pthread_create(&threads[++currentThreadId], NULL, process_package, &tcpConnection) != 0) {
+                printf("Failed to create thread [%d].\n", currentThreadId);
+                continue;
+            }
+            ++g_live_threads;
+            printf("Client thread [%d] created. Processing...\n", currentThreadId);
         }
-        ++g_live_threads;
-        printf("Client thread [%d] created. Processing...\n", currentThreadId);
+
     } while(g_keep_alive);
 
     for(int i = 0; i <= currentThreadId; ++i) {
