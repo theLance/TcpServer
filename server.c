@@ -5,13 +5,15 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <pthread.h>
 #include <unistd.h>
 
 #include "defines.h"
 
 
-void process_package(int tcpConnection)
+void* process_package(void* tcpConnectionPtr)
 {
+    int tcpConnection = *(int*)tcpConnectionPtr;
     // Infinite loop for client - can exit with 'q' from client
     for (;;) {
         char message_buffer[RW_BUFFER_MAX];
@@ -29,7 +31,7 @@ void process_package(int tcpConnection)
         // 2. Check whether it's an exit
         if(end == 0 && strcmp(message_buffer, "q\n") == 0) {
             printf("Shutting down.\n");
-            return;
+            break;
         }
 
         // 3. reverse in-place
@@ -43,6 +45,8 @@ void process_package(int tcpConnection)
         printf("Outgoing message is: %s", message_buffer);
         write(tcpConnection, message_buffer, sizeof(message_buffer));
     }
+    close(tcpConnection);
+    pthread_exit(NULL);
 }
 
 
@@ -105,7 +109,11 @@ int main()
         printf("Client connected. Processing...\n");
     }
 
-    process_package(tcpConnection);
+    pthread_t thread;
+    pthread_create(&thread, NULL, process_package, &tcpConnection);
+    printf("Thread created. Processing...\n");
+    pthread_join(thread, NULL);
+    printf("Thread joined.\n");
 
     close(tcpSocket);
 }
