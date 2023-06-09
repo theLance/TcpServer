@@ -24,6 +24,12 @@ void process_package(int tcpSocket)
         // Send string
         write(tcpSocket, buff, sizeof(buff));
 
+        // Check whether it's an exit
+        if(n == 2 && strcmp(buff, "q\n") == 0) {
+            printf("Shutting down.\n");
+            return;
+        }
+
         // Receive reply
         bzero(buff, sizeof(buff));
         read(tcpSocket, buff, sizeof(buff));

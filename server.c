@@ -12,7 +12,7 @@
 
 void process_package(int tcpConnection)
 {
-    // Infinite loop for client - can exit with SIGINT
+    // Infinite loop for client - can exit with 'q' from client
     for (;;) {
         char message_buffer[RW_BUFFER_MAX];
         bzero(message_buffer, RW_BUFFER_MAX);
@@ -25,7 +25,14 @@ void process_package(int tcpConnection)
         // 1. find line end -> purposefully go beyond
         int end = read_bytes;
         while(message_buffer[end--] != '\n');
-        // 2. reverse in-place
+
+        // 2. Check whether it's an exit
+        if(end == 0 && strcmp(message_buffer, "q\n") == 0) {
+            printf("Shutting down.\n");
+            return;
+        }
+
+        // 3. reverse in-place
         for(int front = 0; front < end; ++front, --end) {
             char tmp = message_buffer[front];
             message_buffer[front] = message_buffer[end];
