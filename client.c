@@ -13,27 +13,27 @@
 void process_package(int tcpSocket)
 {
     for (;;) {
-        char buff[RW_BUFFER_MAX];
-        bzero(buff, sizeof(buff));
+        char message_buffer[RW_BUFFER_MAX];
+        bzero(message_buffer, sizeof(message_buffer));
 
         // Read string
         printf("String to send to server: ");
         int n = 0;
-        while ((buff[n++] = getchar()) != '\n');
+        while ((message_buffer[n++] = getchar()) != '\n');
 
         // Send string
-        write(tcpSocket, buff, sizeof(buff));
+        write(tcpSocket, message_buffer, sizeof(message_buffer));
 
         // Check whether it's an exit
-        if(n == 2 && strcmp(buff, "q\n") == 0) {
+        if(n == 2 && strcmp(message_buffer, "q\n") == 0) {
             printf("Shutting down.\n");
             return;
         }
 
         // Receive reply
-        bzero(buff, sizeof(buff));
-        read(tcpSocket, buff, sizeof(buff));
-        printf("String received from server: %s", buff);
+        bzero(message_buffer, sizeof(message_buffer));
+        read(tcpSocket, message_buffer, sizeof(message_buffer));
+        printf("String received from server: %s", message_buffer);
     }
 }
 
