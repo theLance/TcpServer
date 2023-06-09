@@ -3,13 +3,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
+#include <sys/select.h>
 #include <sys/types.h>
 #include <pthread.h>
 #include <unistd.h>
 
 #include "defines.h"
 
+
+int g_live_threads = 0;
+int g_keep_alive = 1;
 
 void* process_package(void* tcpConnectionPtr)
 {
@@ -31,6 +34,8 @@ void* process_package(void* tcpConnectionPtr)
         // 2. Check whether it's an exit
         if(end == 0 && strcmp(message_buffer, "q\n") == 0) {
             printf("Shutting down.\n");
+            --g_live_threads;
+            g_keep_alive = 0;
             break;
         }
 
@@ -87,7 +92,7 @@ int main()
     }
 
     // Try to listen on the port for the client to connect.
-    if ((listen(tcpSocket, 5)) != 0) {
+    if ((listen(tcpSocket, MAX_CONNECTIONS)) != 0) {
         printf("TCP Socket listen failed. Server shutting down...\n");
         exit(1);
     }
@@ -95,25 +100,45 @@ int main()
         printf("Server listening on port %d...\n", port);
     }
 
+    // Create a new thread for every incoming connection with a maximum number predefined.
+    pthread_t threads[MAX_CONNECTIONS];
+    struct sockaddr_storage serverStorage;
+    int len = sizeof(serverStorage);
     int tcpConnection = -1;
-    struct sockaddr_in client;
-    int len = sizeof(client);
+    int currentThreadId = -1;
+    do {
+        if(g_live_threads == MAX_CONNECTIONS) {
+            printf("Maximum connections reached; no longer accepting connections.\n");
+            char c = getchar();
+            continue;
+        }
+        if(!g_keep_alive) {
+            printf("Shutdown signal received; no longer accepting connections.\n");
+            char c = getchar();
+            continue;
+        }
 
-    // Client sent a package; accept and process.
-    tcpConnection = accept(tcpSocket, (struct sockaddr*)&client, &len);
-    if (tcpConnection < 0) {
-        printf("Failed to accept client connection. Shutting down.\n");
-        exit(1);
-    }
-    else {
-        printf("Client connected. Processing...\n");
-    }
+        tcpConnection = accept(tcpSocket, (struct sockaddr*)&serverStorage, &len);
+        if (tcpConnection < 0) {
+            printf("Failed to accept client connection.\n");
+            continue;
+        }
+        else {
+            printf("Client connected.\n");
+        }
 
-    pthread_t thread;
-    pthread_create(&thread, NULL, process_package, &tcpConnection);
-    printf("Thread created. Processing...\n");
-    pthread_join(thread, NULL);
-    printf("Thread joined.\n");
+        if(pthread_create(&threads[++currentThreadId], NULL, process_package, &tcpConnection) != 0) {
+            printf("Failed to create thread [%d].\n", currentThreadId);
+            continue;
+        }
+        ++g_live_threads;
+        printf("Client thread [%d] created. Processing...\n", currentThreadId);
+    } while(g_keep_alive);
+
+    for(int i = 0; i <= currentThreadId; ++i) {
+        pthread_join(threads[i], NULL);
+        printf("Thread [%d] joined.\n", i);
+    }
 
     close(tcpSocket);
 }
